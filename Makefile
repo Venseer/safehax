@@ -31,7 +31,7 @@ TARGET			:=	$(notdir $(CURDIR))
 BUILD			:=	build
 SOURCES			:=	source
 DATA			:=	data
-INCLUDES		:=	source
+INCLUDES		:=	include
 ROMFS			:=	romfs
 
 APP_TITLE		:=	safehax
@@ -136,7 +136,7 @@ endif
 all: payload $(BUILD)
 
 payload:
-	@cd romfs && make
+	@cd payload && make
 
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
@@ -147,6 +147,7 @@ clean:
 	@echo clean ...
 	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf
 	@cd romfs && rm arm11.bin
+	@rmdir romfs
 
 
 #---------------------------------------------------------------------------------
