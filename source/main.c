@@ -19,7 +19,7 @@
 
 static Result pm_res = -1;
 static s32 backdoor_res = -1;
-static char *error = "FAILED TO LAUNCH SAFE_MODE ARM9!";
+static char *error = "FAILED TO RELOAD!";
 
 static void *payload_buf = NULL;
 static u32 payload_size = 0;
@@ -32,8 +32,8 @@ extern void gfxSetFramebufferInfo(gfxScreen_t screen, u8 id);
 s32 patch_arm11_codeflow(void){
 	__asm__ volatile ( "CPSID AIF\n" "CLREX" );
 	
-	memcpy(FCRAM(0x3F00000), payload_buf, payload_size); //Huge payloads seem to crash when being copied
-	memcpy(FCRAM(0x3FFF000), payload_buf + 0xFF000, 0xE0C);
+	memcpy(FCRAM(0x3F00000), payload_buf, payload_size); //Huge payloads seem to crash when being copied (?)
+	memcpy(FCRAM(0x3FFF000), payload_buf + 0xFF000, 0xE20);
 	
 	for (unsigned int i = 0; i < 0x2000/4; i++){
 		if (KMEMORY[i] == 0xE12FFF14 && KMEMORY[i+2] == 0xE3A01000){ //hook arm11 launch
@@ -75,6 +75,10 @@ int main(int argc, char **argv){
 	sdmcInit();
 	romfsInit();
 	
+	kver = osGetKernelVersion();
+	if (kver > SYSTEM_VERSION(2, 53, 0)) //11.4^
+		PANIC(true, "UNSUPPORTED FIRMWARE!");
+	
 	if (checkSvcGlobalBackdoor()){
 		initsrv_allservices();
 		patch_svcaccesstable();
@@ -83,7 +87,7 @@ int main(int argc, char **argv){
 	PANIC(pmInit(), "PM INIT FAILED!");
 	
 	hidScanInput();
-	if (hidKeysDown() & KEY_B){ //Hold B to enable prints
+	if (hidKeysDown() & KEY_B){ //Hold B to enable debugging
 		consoleInit(GFX_TOP, NULL);
 		printf("\n\x1b[37;1m");
 		debug = true;
@@ -95,12 +99,12 @@ int main(int argc, char **argv){
 	payload_buf = memalign(0x1000, 0x100000);
 	PANIC(!payload_buf, "FAILED TO ALLOCATE MEMORY!");
 	
-	DEBUG("Reading ARM9 payload...");
+	DEBUG("Reading payload...");
 	payload_size = FileRead(payload_buf, "romfs:/arm9.bin", 0xFF000); //check for a bundled arm9 payload
 	if (!payload_size) payload_size = FileRead(payload_buf, "sdmc:/safehaxpayload.bin", 0xFF000);
 	if (!payload_size) payload_size = FileRead(payload_buf, "sdmc:/arm9.bin", 0xFF000);
 	if (!payload_size) payload_size = FileRead(payload_buf, "sdmc:/arm9loaderhax.bin", 0xFF000);
-	PANIC(!payload_size, "FAILED TO READ THE ARM9 PAYLOAD!");
+	PANIC(!payload_size, "FAILED TO READ THE PAYLOAD!");
 	
 	DEBUG("Reading ARM11 payload...");
 	PANIC(!FileRead(payload_buf + 0xFF000, "romfs:/arm11.bin", 0xE00), "FAILED TO READ THE ARM11 PAYLOAD!");
@@ -108,23 +112,28 @@ int main(int argc, char **argv){
 	/* Setup Framebuffers */ //https://github.com/mid-kid/CakeBrah/blob/master/source/brahma.c#L364
 	
 	DEBUG("Setting framebuffers...");
-	*((u32*)(payload_buf + 0xFFE00)) = (u32)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL) + 0xC000000;
-	*((u32*)(payload_buf + 0xFFE04)) = (u32)gfxGetFramebuffer(GFX_TOP, GFX_RIGHT, NULL, NULL) + 0xC000000;
-	*((u32*)(payload_buf + 0xFFE08)) = (u32)gfxGetFramebuffer(GFX_BOTTOM, 0, NULL, NULL) + 0xC000000;
+	*((u32 *)(payload_buf + 0xFFE00)) = (u32)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL) + 0xC000000;
+	*((u32 *)(payload_buf + 0xFFE04)) = (u32)gfxGetFramebuffer(GFX_TOP, GFX_RIGHT, NULL, NULL) + 0xC000000;
+	*((u32 *)(payload_buf + 0xFFE08)) = (u32)gfxGetFramebuffer(GFX_BOTTOM, 0, NULL, NULL) + 0xC000000;
 	gfxSwapBuffers();
 	
 	/* Patch ARM11 */
 	
-	kver = osGetKernelVersion();
-	
 	DEBUG("Patching ARM11...");
-	svcBackdoor(patch_arm11_codeflow);
+	
+	*((bool *)(payload_buf + 0xFFE10)) = debug; //for safehax post-reload color-fill-based debugging
+	
+	if (checkSvcGlobalBackdoor()) //use this where applicable
+		svcGlobalBackdoor(patch_arm11_codeflow);
+	else
+		svcBackdoor(patch_arm11_codeflow);
+	
 	PANIC(backdoor_res, "FAILED TO PATCH THE KERNEL!");
 	
-	/* Launch SAFE_MODE ARM9 */
+	/* Relaunch Firmware */ //This will clear the global flag preventing SAFE_MODE launch.
 	
-	DEBUG("Launching SAFE_MODE ARM9...");
-	pm_res = PM_LaunchFIRMSetParams(3, 0, NULL);
+	DEBUG("Reloading firmware...");
+	pm_res = PM_LaunchFIRMSetParams(2, 0, NULL);
 	
 exit:
 	if (pm_res){

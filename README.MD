@@ -1,7 +1,9 @@
 # safehax/safefirmhax
 ## What this is:
 
-Basically, it works like Brahma's arm9 bootstrap, but for a wider range of firmwares. It will attempt to load one of the listed payloads from the SD card root: 
+_**THIS DOES NOT WORK ON SYSTEM FIRMWARES ABOVE 11.3**_
+
+Basically, safehax works like Brahma's arm9 bootstrap, but for a wider range of firmwares. It will attempt to load one of the listed payloads from the SD card root: 
 
  * `safehaxpayload.bin`
  * `arm9.bin`
@@ -14,6 +16,12 @@ A Kernel11 exploit must be run ahead of time that either enables all srv/svc acc
 ## How it works:
 
 Because 'SAFE_MODE' firm is out of date (~3.0 on O3DS, ~8.1 on N3DS), it's still vulnerable to firmlaunch-hax, which allows us to overwrite the arm9 entry pointer on firmlaunch. Knowing this, we can trigger a firmlaunch, so that 'SAFE_MODE' arm9 can run, then we sync up with arm9 until we can send another firmlaunch request to it. From there, we can do firmlaunch-hax like normal and gain arm9 code execution.
+
+## 11.3.0 - The fix (not really!):
+
+Nintendo added a flag under Process9 which, when set, triggers a panic on SAFE_MODE launch. This flag is set when certain titles are launched, ensuring that SAFE_MODE can only be launched early in the boot process.
+
+However, this is incredibly easy to circumvate since you can just relaunch NATIVE_FIRM and the flag will be reset. Therefore, all we need to do to allow 11.3 support is to relaunch NATIVE_FIRM before performing the attack.
 
 # Credits
 
